@@ -29,9 +29,13 @@
   "license": "ISC",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.0.0",
     "@types/node": "^25.2.2",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.24",
     "concurrently": "^9.2.1",
@@ -50,15 +54,19 @@
     "chalk": "^5.6.2",
     "clsx": "^2.1.1",
     "commander": "^14.0.3",
+    "cors": "^2.8.6",
     "exiftool-vendored": "^35.9.0",
+    "express": "^5.2.1",
     "framer-motion": "^12.34.0",
     "heic-convert": "^2.1.0",
     "lucide-react": "^0.563.0",
+    "multer": "^2.0.2",
     "pdfjs-dist": "^5.4.624",
     "pdfkit": "^0.17.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "sharp": "^0.34.5",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "uuid": "^13.0.0"
   }
 }

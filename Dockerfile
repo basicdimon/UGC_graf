@@ -1,32 +1,28 @@
-# Use Node.js LTS (Bookworm slim for smaller size but with glibc)
 FROM node:22-bookworm-slim
 
-# Install system dependencies for image processing
-# ghostscript: for PDF/EPS/AI rendering
-# poppler-utils: for pdftoppm (alternative PDF rendering)
-# libvips-dev: optional, but sharp usually brings its own
-# procps: for process monitoring if needed
-RUN apt-get update && apt-get install -y \
-    ghostscript \
-    poppler-utils \
-    procps \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+# ghostscript: for PDF conversion
+# poppler-utils: for PDF to Image (pdftoppm)
+# procps: for ps command (optional debugging)
+RUN apt-get update && apt-get install -y ghostscript poppler-utils procps && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json* ./
-
 # Install dependencies
+COPY package.json package-lock.json* ./
 RUN npm install
 
-# Copy source code
+# Copy source
 COPY . .
 
-# Build the project
+# Build UI
+RUN npm run build:ui
+
+# Build Backend/CLI
 RUN npm run build
 
-# Entrypoint for the CLI
-ENTRYPOINT ["node", "dist/cli/index.js"]
-CMD ["info"]
+# Expose port
+EXPOSE 3000
+
+# Start server
+ENTRYPOINT ["node", "dist/server/index.js"]

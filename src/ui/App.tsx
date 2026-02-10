@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, FileImage, Settings, Play, X, Image as ImageIcon, FolderOpen, Check } from 'lucide-react'
+import { Upload, FileImage, Settings, Play, X, Image as ImageIcon, FolderOpen } from 'lucide-react'
 import clsx from 'clsx'
 import * as pdfjsLib from 'pdfjs-dist';
+import { api, FileItem, isWeb } from './api'
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -10,14 +11,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 function App() {
-  const [files, setFiles] = useState<string[]>([])
+  const [files, setFiles] = useState<FileItem[]>([])
   const [version, setVersion] = useState<string>('')
   const [isDragging, setIsDragging] = useState(false)
   const [targetFormat, setTargetFormat] = useState('png')
   const [outputDir, setOutputDir] = useState<string | null>(null)
   const [isConverting, setIsConverting] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [isElectronAvailable, setIsElectronAvailable] = useState(false)
   
   const [showSettings, setShowSettings] = useState(false)
   const [autoClear, setAutoClear] = useState(false)
@@ -26,76 +26,78 @@ function App() {
   useEffect(() => { autoClearRef.current = autoClear }, [autoClear])
 
   useEffect(() => {
-    const api = window.electronAPI
-    if (api) {
-        setIsElectronAvailable(true)
-        api.getVersion().then(setVersion).catch(e => console.error(e))
+    if (!isWeb) {
+        const electronApi = window.electronAPI
+        if (electronApi) {
+            electronApi.getVersion().then(setVersion).catch(e => console.error(e))
 
-        api.onProgress((data) => {
-            setProgress(data.progress)
-        })
+            electronApi.onProgress((data) => {
+                setProgress(data.progress)
+            })
 
-        api.onConversionComplete((summary) => {
-            setIsConverting(false)
-            setProgress(100)
-            setTimeout(() => {
-                let message = `Done! Converted: ${summary.completed}, Errors: ${summary.errors}`;
-                if (summary.errors > 0 && summary.errorLog && summary.errorLog.length > 0) {
-                    message += `\n\nErrors:\n${summary.errorLog.join('\n')}`;
+            electronApi.onConversionComplete((summary) => {
+                setIsConverting(false)
+                setProgress(100)
+                setTimeout(() => {
+                    let message = `Done! Converted: ${summary.completed}, Errors: ${summary.errors}`;
+                    if (summary.errors > 0 && summary.errorLog && summary.errorLog.length > 0) {
+                        message += `\n\nErrors:\n${summary.errorLog.join('\n')}`;
+                    }
+                    alert(message)
+                    setProgress(0)
+                    if (autoClearRef.current) setFiles([])
+                }, 500)
+            })
+            
+            electronApi.onConversionError((err) => {
+                console.error("Conversion error:", err)
+                setIsConverting(false)
+                alert(`Error: ${err}`)
+            })
+
+            // Handle PDF rendering requests from Main process
+            electronApi.onPdfRenderRequest(async ({ id, buffer }) => {
+                try {
+                    console.log('Received PDF render request', id);
+                    const loadingTask = pdfjsLib.getDocument({ data: buffer });
+                    const pdf = await loadingTask.promise;
+                    const page = await pdf.getPage(1); // Always render first page for now
+
+                    const viewport = page.getViewport({ scale: 2.0 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    if (!context) throw new Error('Canvas context creation failed');
+
+                    await page.render({ canvasContext: context, viewport, canvas }).promise;
+                    
+                    const dataUrl = canvas.toDataURL('image/png');
+                    await electronApi.sendPdfRendered(id, dataUrl);
+                    console.log('PDF rendered and sent back', id);
+                } catch (error: any) {
+                    console.error('PDF render error:', error);
+                    await electronApi.sendPdfRendered(id, null, error.message || 'Unknown error');
                 }
-                alert(message)
-                setProgress(0)
-                if (autoClearRef.current) setFiles([])
-            }, 500)
-        })
-        
-        api.onConversionError((err) => {
-            console.error("Conversion error:", err)
-            setIsConverting(false)
-            alert(`Error: ${err}`)
-        })
-
-        // Handle PDF rendering requests from Main process
-        api.onPdfRenderRequest(async ({ id, buffer }) => {
-            try {
-                console.log('Received PDF render request', id);
-                const loadingTask = pdfjsLib.getDocument({ data: buffer });
-                const pdf = await loadingTask.promise;
-                const page = await pdf.getPage(1); // Always render first page for now
-
-                const viewport = page.getViewport({ scale: 2.0 });
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-
-                if (!context) throw new Error('Canvas context creation failed');
-
-                await page.render({ canvasContext: context, viewport }).promise;
-                
-                const dataUrl = canvas.toDataURL('image/png');
-                await api.sendPdfRendered(id, dataUrl);
-                console.log('PDF rendered and sent back', id);
-            } catch (error: any) {
-                console.error('PDF render error:', error);
-                await api.sendPdfRendered(id, null, error.message || 'Unknown error');
-            }
-        });
+            });
+        }
     } else {
-        console.error("Electron API not found")
+        setVersion('Web 1.0');
     }
   }, [])
 
   const handleSelectFiles = async () => {
     if (isConverting) return
-    if (!isElectronAvailable) {
-        alert("Electron integration is not active. Please restart the application.")
-        return
-    }
     try {
-        const selected = await window.electronAPI.selectFiles()
+        const selected = await api.selectFiles()
         if (selected && selected.length > 0) {
-            setFiles(prev => [...new Set([...prev, ...selected])])
+            // Deduplicate based on path/name
+            setFiles(prev => {
+                const existing = new Set(prev.map(f => f.path));
+                const newFiles = selected.filter(f => !existing.has(f.path));
+                return [...prev, ...newFiles];
+            })
         }
     } catch (error) {
         console.error("Failed to select files:", error)
@@ -117,21 +119,43 @@ function App() {
     e.preventDefault()
     setIsDragging(false)
     
-    // Electron specific: e.dataTransfer.files[0].path gives the full path
-    const droppedFiles = Array.from(e.dataTransfer.files).map(f => (f as any).path)
-    if (droppedFiles.length > 0) {
-      setFiles(prev => [...new Set([...prev, ...droppedFiles])])
+    if (!isWeb) {
+        // Electron specific
+        const droppedFiles = Array.from(e.dataTransfer.files).map(f => ({
+            path: (f as any).path,
+            name: f.name
+        }));
+        if (droppedFiles.length > 0) {
+             setFiles(prev => {
+                const existing = new Set(prev.map(f => f.path));
+                const newFiles = droppedFiles.filter(f => !existing.has(f.path));
+                return [...prev, ...newFiles];
+            })
+        }
+    } else {
+        // Web specific
+        const droppedFiles = Array.from(e.dataTransfer.files).map(f => ({
+            path: f.name,
+            name: f.name,
+            file: f
+        }));
+        if (droppedFiles.length > 0) {
+            setFiles(prev => {
+                const existing = new Set(prev.map(f => f.path));
+                const newFiles = droppedFiles.filter(f => !existing.has(f.path));
+                return [...prev, ...newFiles];
+            })
+        }
     }
   }, [])
 
   const removeFile = (pathToRemove: string) => {
     if (isConverting) return
-    setFiles(files.filter(f => f !== pathToRemove))
+    setFiles(files.filter(f => f.path !== pathToRemove))
   }
 
   const handleSelectDirectory = async () => {
-    if (isConverting) return
-    if (!isElectronAvailable) return
+    if (isConverting || isWeb) return
     try {
         const dir = await window.electronAPI.selectDirectory()
         if (dir) {
@@ -144,18 +168,24 @@ function App() {
 
   const handleConvert = async () => {
     if (files.length === 0 || isConverting) return
-    if (!isElectronAvailable) {
-        alert("Electron API not available")
-        return
-    }
+    
     setIsConverting(true)
     setProgress(0)
     try {
-      await window.electronAPI.convertFiles(files, targetFormat, outputDir || undefined)
-    } catch (e) {
+      const result = await api.convertFiles(
+          { files, format: targetFormat, outputDir: outputDir || undefined },
+          (p) => setProgress(p)
+      );
+      
+      if (isWeb && result) {
+          setIsConverting(false)
+          alert(`Done! Converted ${result.completed} files.`);
+          if (autoClearRef.current) setFiles([]);
+      }
+    } catch (e: any) {
       console.error(e)
       setIsConverting(false)
-      alert("Failed to start conversion")
+      alert("Failed to start conversion: " + e.message)
     }
   }
 
@@ -171,7 +201,7 @@ function App() {
               Универсальный Графический Конвертер
             </h1>
             <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 font-mono">v1.0</span>
+                <span className="text-xs text-slate-500 font-mono">v{version}</span>
             </div>
           </div>
         </div>
@@ -238,15 +268,15 @@ function App() {
                     <ImageIcon className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-200 truncate" title={file}>
-                      {file.split(/[/\\]/).pop()}
+                    <p className="text-sm font-medium text-slate-200 truncate" title={file.name}>
+                      {file.name}
                     </p>
-                    <p className="text-xs text-slate-500 truncate" title={file}>
-                      {file}
+                    <p className="text-xs text-slate-500 truncate" title={file.path}>
+                      {file.path}
                     </p>
                   </div>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); removeFile(file); }}
+                    onClick={(e) => { e.stopPropagation(); removeFile(file.path); }}
                     className="p-1.5 hover:bg-red-500/20 hover:text-red-400 text-slate-500 rounded transition-colors"
                   >
                     <X className="w-4 h-4" />
@@ -274,27 +304,30 @@ function App() {
             </select>
           </div>
           
-          <div className="flex flex-col gap-1 flex-1 min-w-0">
-            <label className="text-xs text-slate-400 font-medium ml-1">Output Directory</label>
-            <div className="flex gap-2">
-                <div className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-sm truncate leading-5" title={outputDir || 'Same as source file'}>
-                    {outputDir || <span className="text-slate-500 italic">Same as source file</span>}
+          {/* Hide output directory in Web mode */}
+          {!isWeb && (
+              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                <label className="text-xs text-slate-400 font-medium ml-1">Output Directory</label>
+                <div className="flex gap-2">
+                    <div className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-sm truncate leading-5" title={outputDir || 'Same as source file'}>
+                        {outputDir || <span className="text-slate-500 italic">Same as source file</span>}
+                    </div>
+                    <button 
+                        onClick={handleSelectDirectory}
+                        className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition-colors"
+                        title="Change output directory"
+                    >
+                        <FolderOpen className="w-5 h-5" />
+                    </button>
                 </div>
-                <button 
-                    onClick={handleSelectDirectory}
-                    className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition-colors"
-                    title="Change output directory"
-                >
-                    <FolderOpen className="w-5 h-5" />
-                </button>
-            </div>
-          </div>
+              </div>
+          )}
 
           <button 
             disabled={files.length === 0 || isConverting}
             onClick={handleConvert}
             className={clsx(
-              "px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-all shadow-lg",
+              "px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-all shadow-lg ml-auto",
               isConverting 
                 ? "bg-slate-700 cursor-not-allowed text-slate-400" 
                 : "bg-blue-600 hover:bg-blue-500 text-white active:scale-95 shadow-blue-900/20"
@@ -302,60 +335,60 @@ function App() {
           >
             {isConverting ? (
               <>
-                <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                {progress}%
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>{progress}%</span>
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-current" />
-                Convert {files.length > 0 ? `${files.length} Files` : ''}
+                <Play className="w-5 h-5 fill-current" />
+                <span>Convert</span>
               </>
             )}
           </button>
         </div>
-        
-        {/* Progress Bar Overlay */}
-        {isConverting && (
-          <div className="absolute bottom-0 left-0 w-full h-1 bg-slate-800">
-            <div 
-              className="h-full bg-blue-500 transition-all duration-300" 
-              style={{ width: `${progress}%` }} 
-            />
-          </div>
-        )}
       </main>
 
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
-          <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-2xl w-96" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-white">Settings</h2>
-              <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-slate-700 rounded-full transition-colors">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <button 
-                 onClick={() => setAutoClear(!autoClear)}
-                 className="w-full flex items-center justify-between p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:bg-slate-900 transition-colors"
-              >
-                 <span className="text-slate-300">Auto-clear list after conversion</span>
-                 <div className={clsx("w-11 h-6 rounded-full transition-colors relative", autoClear ? "bg-blue-600" : "bg-slate-700")}>
-                   <div className={clsx("absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform", autoClear ? "translate-x-5" : "translate-x-0")} />
-                 </div>
-              </button>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-slate-200">Settings</h2>
+                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl">
+                        <div>
+                            <p className="font-medium text-slate-200">Auto-clear list</p>
+                            <p className="text-xs text-slate-500">Clear files after successful conversion</p>
+                        </div>
+                        <button 
+                            onClick={() => setAutoClear(!autoClear)}
+                            className={clsx(
+                                "w-12 h-6 rounded-full p-1 transition-colors relative",
+                                autoClear ? "bg-blue-600" : "bg-slate-700"
+                            )}
+                        >
+                            <div className={clsx(
+                                "w-4 h-4 bg-white rounded-full transition-transform",
+                                autoClear ? "translate-x-6" : "translate-x-0"
+                            )} />
+                        </button>
+                    </div>
 
-              <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700/50 text-sm text-slate-400">
-                <p className="font-medium text-slate-300">Universal Graphics Converter</p>
-                <p className="mt-1 text-xs">Version: 1.0 (Release)</p>
-                <p className="mt-2 text-xs text-slate-500">
-                  A powerful tool to convert your images and PDFs locally.
-                </p>
-              </div>
+                    <div className="p-4 bg-slate-800/50 rounded-xl">
+                        <p className="font-medium text-slate-200 mb-2">About</p>
+                        <p className="text-sm text-slate-400">
+                            Universal Graphic Converter<br/>
+                            Version: {version}<br/>
+                            {isWeb ? 'Running in Web Mode' : 'Running in Desktop Mode'}
+                        </p>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
       )}
     </div>
