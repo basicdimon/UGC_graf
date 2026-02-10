@@ -22,7 +22,7 @@ RUN npm run build:ui
 RUN npm run build
 
 # Expose port
-EXPOSE 3000
+EXPOSE 5173
 
 # Start server
 ENTRYPOINT ["node", "dist/server/index.js"]

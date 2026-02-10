@@ -16,7 +16,7 @@ const PDFDocument = require('pdfkit');
 
 const execAsync = util.promisify(exec);
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5173;
 
 app.use(cors());
 app.use(express.json());

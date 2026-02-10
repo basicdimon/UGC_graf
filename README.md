@@ -73,11 +73,11 @@
 
 2. **Запуск сервиса**:
    ```bash
-   docker run -d -p 3000:3000 --name ugc-service ugc-web
+   docker run -d -p 5173:5173 --name ugc-service ugc-web
    ```
 
 3. **Использование**:
-   Откройте браузер и перейдите по адресу: [http://localhost:3000](http://localhost:3000)
+   Откройте браузер и перейдите по адресу: [http://localhost:5173](http://localhost:5173)
 
 ### 2. CLI (Командная строка)
 Для разовых задач конвертации без запуска сервера.
