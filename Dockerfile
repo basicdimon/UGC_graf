@@ -27,5 +27,6 @@ COPY . .
 # Build the project
 RUN npm run build
 
-# Default command (can be overridden)
-CMD ["node", "dist/cli/index.js", "info"]
+# Entrypoint for the CLI
+ENTRYPOINT ["node", "dist/cli/index.js"]
+CMD ["info"]
