@@ -9,6 +9,7 @@ coverage
 # Production
 dist
 dist-electron
+dist-ui
 release
 build
 
