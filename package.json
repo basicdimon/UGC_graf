@@ -1,0 +1,64 @@
+{
+  "name": "ugc",
+  "version": "1.0.0",
+  "description": "Universal Graphics Converter",
+  "type": "module",
+  "main": "dist/electron/main.js",
+  "bin": {
+    "ugc": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli/index.ts",
+    "test": "vitest",
+    "start": "node dist/cli/index.js",
+    "dev:gui": "concurrently -k \"npm run dev:ui\" \"npm run dev:electron\"",
+    "dev:ui": "vite",
+    "dev:electron": "tsc -p tsconfig.electron.json && wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "build:ui": "tsc -p tsconfig.ui.json && vite build",
+    "build:electron": "tsc -p tsconfig.electron.json"
+  },
+  "keywords": [
+    "converter",
+    "graphics",
+    "image",
+    "pdf",
+    "cli"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^25.2.2",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "autoprefixer": "^10.4.24",
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "electron": "^40.2.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18",
+    "wait-on": "^8.0.2"
+  },
+  "dependencies": {
+    "@types/pdfkit": "^0.17.4",
+    "chalk": "^5.6.2",
+    "clsx": "^2.1.1",
+    "commander": "^14.0.3",
+    "exiftool-vendored": "^35.9.0",
+    "framer-motion": "^12.34.0",
+    "heic-convert": "^2.1.0",
+    "lucide-react": "^0.563.0",
+    "pdfjs-dist": "^5.4.624",
+    "pdfkit": "^0.17.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "sharp": "^0.34.5",
+    "tailwind-merge": "^3.4.0"
+  }
+}
