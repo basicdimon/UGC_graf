@@ -88,7 +88,7 @@ app.get('/api/download/:filename', (req, res) => {
 app.use(express.static(path.join(process.cwd(), 'dist-ui')));
 
 // Fallback to index.html
-app.get('*', (req, res) => {
+app.get(/.*/, (req, res) => {
     const indexPath = path.join(process.cwd(), 'dist-ui/index.html');
     if (existsSync(indexPath)) {
         res.sendFile(indexPath);
